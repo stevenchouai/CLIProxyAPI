@@ -2,11 +2,11 @@
 
 [English](README.md) | 中文 | [日本語](README_JA.md)
 
-一个为 CLI 提供 OpenAI/Gemini/Claude/Codex 兼容 API 接口的代理服务器。
+CLIProxyAPI 是面向 AI 编程工具的 AI Coding Gateway，也是一层 CLI-to-API 兼容适配层。
 
-现已支持通过 OAuth 登录接入 OpenAI Codex（GPT 系列）和 Claude Code。
+它把 Gemini CLI、Claude Code、OpenAI Codex 等 CLI/OAuth 订阅能力，以及通过配置接入的 API Key 或 OpenAI 兼容上游，抽象成 OpenAI/Gemini/Claude/Codex 兼容的 HTTP API。
 
-您可以使用本地或多账户的CLI方式，通过任何与 OpenAI（包括Responses）/Gemini/Claude 兼容的客户端和SDK进行访问。
+当 AI IDE、Coding Agent、SDK 或本地服务需要一个 API Base URL，而你手头的模型供给来自 CLI 订阅、OAuth 登录或本地多账户时，可以使用 CLIProxyAPI 做统一入口。请自备凭据：CLIProxyAPI 不提供托管模型访问，也不会绕过上游服务的额度和限制。
 
 ## 赞助商
 
@@ -48,6 +48,7 @@ GLM CODING PLAN 是专为AI编码打造的订阅套餐，每月最低仅需20元
 
 ## 功能特性
 
+- 面向 AI 编程场景的本地 AI Coding Gateway，将 CLI 订阅和 API Key Provider 暴露为统一 API
 - 为 CLI 模型提供 OpenAI/Gemini/Claude/Codex 兼容的 API 端点
 - 新增 OpenAI Codex（GPT 系列）支持（OAuth 登录）
 - 新增 Claude Code 支持（OAuth 登录）
@@ -64,9 +65,91 @@ GLM CODING PLAN 是专为AI编码打造的订阅套餐，每月最低仅需20元
 - 通过配置接入上游 OpenAI 兼容提供商（例如 OpenRouter）
 - 可复用的 Go SDK（见 `docs/sdk-usage_CN.md`）
 
+## 兼容场景
+
+CLIProxyAPI 适合 AI Coding Infrastructure 中常见的“客户端协议”和“模型供给来源”不一致的场景。
+
+- AI IDE 与 Coding Agent：将 OpenAI 兼容客户端指向 `http://127.0.0.1:8317/v1`，使用 `/v1/models`、`/v1/chat/completions` 或 `/v1/responses`。
+- Cline、Roo Code 及类似工具：当工具支持自定义 OpenAI 兼容 Provider 时，可以配置本地 Base URL，并选择 CLIProxyAPI 暴露的模型。
+- Amp CLI 与 Amp IDE 扩展：使用下文的内置 Amp 路由与 Provider Routing。
+- SDK 与后端服务：可以用 OpenAI 兼容 SDK 调用代理，也可以通过 `sdk/cliproxy` 将代理能力嵌入 Go 程序。
+- 本地多账户 CLI 访问：通过 OAuth/file-backed 账户和 API Key 配置，对 Gemini、OpenAI/Codex、Claude 等来源做轮询负载均衡。
+- Agent 路由与模型/工具路由：在目标协议支持的范围内，使用模型别名、provider-specific 路径、payload 规则和函数/工具调用能力。
+- 特定协议客户端：Claude 风格客户端可使用 `/v1/messages`，Gemini 风格客户端可使用 `/v1beta/models/...`，需要明确协议表面时可使用 `/api/provider/{provider}/...`。
+
+## AI Coding Infrastructure 趋势
+
+AI 编程基础设施正在同时面对 Agent UI、CLI 订阅、API 兼容 SDK、模型专用工具协议等多种形态。Steven 对 CLIProxyAPI 的独创角度是做 coding-agent supply layer：把本地订阅、OAuth 账户和兼容上游规整为统一开发者接口，而不是让每个编程工具分别接入每一种 Provider。
+
+它适合用于：
+
+- 将 CLI 订阅能力转换成本地 API 兼容端点
+- 在不同编程工具之间统一模型名和路由行为
+- 在不把原始上游凭据散落到每个客户端的前提下，共享本地多账户容量
+- 在稳定的本地 Base URL 后面测试 Provider、模型与协议路由
+
 ## 新手入门
 
 CLIProxyAPI 用户手册： [https://help.router-for.me/](https://help.router-for.me/cn/)
+
+## 最小 Quickstart（OpenAI 兼容）
+
+1. 创建并编辑配置：
+
+```bash
+cp config.example.yaml config.yaml
+# 至少设置一个 api-keys 值，然后添加 OAuth 凭据或 API Key Provider。
+```
+
+2. 添加模型供给。按你的实际凭据来源选择：
+
+```bash
+go run ./cmd/server --config config.yaml --login         # Gemini/Google OAuth
+go run ./cmd/server --config config.yaml --claude-login  # Claude Code OAuth
+go run ./cmd/server --config config.yaml --codex-login   # OpenAI Codex OAuth
+```
+
+也可以直接在 `config.yaml` 中配置 `gemini-api-key`、`claude-api-key`、`codex-api-key` 或 `openai-compatibility`。
+
+3. 启动本地网关：
+
+```bash
+go run ./cmd/server --config config.yaml
+```
+
+4. 查看模型，并调用 OpenAI 兼容的 Chat Completions 端点：
+
+```bash
+curl http://127.0.0.1:8317/v1/models \
+  -H "Authorization: Bearer your-api-key-1"
+
+curl http://127.0.0.1:8317/v1/chat/completions \
+  -H "Authorization: Bearer your-api-key-1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "<model-from-/v1/models>",
+    "messages": [
+      {"role": "user", "content": "Say hello from CLIProxyAPI"}
+    ]
+  }'
+```
+
+也可以在任意 OpenAI 兼容 SDK 中设置 Base URL：
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://127.0.0.1:8317/v1",
+    api_key="your-api-key-1",
+)
+
+response = client.chat.completions.create(
+    model="<model-from-/v1/models>",
+    messages=[{"role": "user", "content": "Say hello from CLIProxyAPI"}],
+)
+print(response.choices[0].message.content)
+```
 
 ## 管理 API 文档
 

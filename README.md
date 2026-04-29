@@ -2,11 +2,11 @@
 
 English | [中文](README_CN.md) | [日本語](README_JA.md)
 
-A proxy server that provides OpenAI/Gemini/Claude/Codex compatible API interfaces for CLI.
+CLIProxyAPI is an AI Coding Gateway and CLI-to-API compatibility layer for developer tools.
 
-It now also supports OpenAI Codex (GPT models) and Claude Code via OAuth.
+It turns local CLI/OAuth access from providers such as Gemini CLI, Claude Code, and OpenAI Codex, plus configured API-key or OpenAI-compatible upstreams, into OpenAI/Gemini/Claude/Codex compatible HTTP APIs.
 
-So you can use local or multi-account CLI access with OpenAI(include Responses)/Gemini/Claude-compatible clients and SDKs.
+Use it when an AI IDE, coding agent, SDK, or local service expects an API base URL, but your available supply is a CLI subscription, OAuth login, or a set of local accounts. Bring your own credentials: CLIProxyAPI does not provide hosted model access or bypass upstream provider limits.
 
 ## Sponsor
 
@@ -47,7 +47,8 @@ Get 10% OFF GLM CODING PLAN：https://z.ai/subscribe?ic=8JVLJQFSKB
 
 ## Overview
 
-- OpenAI/Gemini/Claude compatible API endpoints for CLI models
+- AI Coding Gateway for exposing CLI subscriptions and API-key providers through one local API surface
+- OpenAI/Gemini/Claude/Codex compatible API endpoints for CLI models
 - OpenAI Codex support (GPT models) via OAuth login
 - Claude Code support via OAuth login
 - Amp CLI and IDE extensions support with provider routing
@@ -64,9 +65,91 @@ Get 10% OFF GLM CODING PLAN：https://z.ai/subscribe?ic=8JVLJQFSKB
 - OpenAI-compatible upstream providers via config (e.g., OpenRouter)
 - Reusable Go SDK for embedding the proxy (see `docs/sdk-usage.md`)
 
+## Compatibility and Use Cases
+
+CLIProxyAPI is designed for AI coding infrastructure where client tools and available model supply do not always speak the same protocol.
+
+- AI IDEs and coding agents: point OpenAI-compatible clients at `http://127.0.0.1:8317/v1` and use `/v1/models`, `/v1/chat/completions`, or `/v1/responses`.
+- Cline, Roo Code, and similar tools: use the local OpenAI-compatible endpoint when the tool supports a custom/OpenAI-compatible provider, then select a model exposed by CLIProxyAPI.
+- Amp CLI and Amp IDE extensions: use the built-in Amp routes and provider routing described below.
+- SDKs and backend services: call the proxy with OpenAI-compatible SDKs, or embed it with the Go SDK under `sdk/cliproxy`.
+- Local multi-account CLI access: use OAuth/file-backed accounts and API-key entries with round-robin load balancing for Gemini, OpenAI/Codex, and Claude sources.
+- Agent routing and model/tool routing: use model aliases, provider-specific paths, payload rules, and function/tool calling support where the target protocol supports those features.
+- Protocol-specific clients: use `/v1/messages` for Claude-style clients, `/v1beta/models/...` for Gemini-style clients, and `/api/provider/{provider}/...` routes when you need a specific protocol surface.
+
+## AI Coding Infrastructure Context
+
+AI coding stacks increasingly combine agent UIs, CLI subscriptions, API-compatible SDKs, and model-specific tool protocols. Steven's angle with CLIProxyAPI is to make it the coding-agent supply layer: it normalizes local subscriptions, OAuth accounts, and compatible upstreams into a unified developer interface instead of forcing every coding tool to integrate each provider separately.
+
+That makes it useful for:
+
+- turning CLI subscription access into API-compatible local endpoints
+- standardizing model names and routing behavior across coding tools
+- sharing multi-account capacity across local agents without exposing raw upstream credentials to every client
+- testing provider, model, and protocol routing behind a stable local base URL
+
 ## Getting Started
 
 CLIProxyAPI Guides: [https://help.router-for.me/](https://help.router-for.me/)
+
+## Minimal Quickstart (OpenAI-compatible)
+
+1. Create and edit a config:
+
+```bash
+cp config.example.yaml config.yaml
+# Set at least one value under api-keys, then add OAuth credentials or API-key providers.
+```
+
+2. Add model supply. Choose the credential source you actually use:
+
+```bash
+go run ./cmd/server --config config.yaml --login         # Gemini/Google OAuth
+go run ./cmd/server --config config.yaml --claude-login  # Claude Code OAuth
+go run ./cmd/server --config config.yaml --codex-login   # OpenAI Codex OAuth
+```
+
+You can also configure `gemini-api-key`, `claude-api-key`, `codex-api-key`, or `openai-compatibility` entries directly in `config.yaml`.
+
+3. Start the local gateway:
+
+```bash
+go run ./cmd/server --config config.yaml
+```
+
+4. List models and call the OpenAI-compatible chat endpoint:
+
+```bash
+curl http://127.0.0.1:8317/v1/models \
+  -H "Authorization: Bearer your-api-key-1"
+
+curl http://127.0.0.1:8317/v1/chat/completions \
+  -H "Authorization: Bearer your-api-key-1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "<model-from-/v1/models>",
+    "messages": [
+      {"role": "user", "content": "Say hello from CLIProxyAPI"}
+    ]
+  }'
+```
+
+Or use any OpenAI-compatible SDK by setting the base URL:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://127.0.0.1:8317/v1",
+    api_key="your-api-key-1",
+)
+
+response = client.chat.completions.create(
+    model="<model-from-/v1/models>",
+    messages=[{"role": "user", "content": "Say hello from CLIProxyAPI"}],
+)
+print(response.choices[0].message.content)
+```
 
 ## Management API
 
